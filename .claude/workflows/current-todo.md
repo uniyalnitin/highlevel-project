@@ -1,83 +1,54 @@
-# Task Tracker — Social Platform
+# Task Tracker: Social Networking Platform Backend
 
 ## Setup
-- [ ] Spec written and reviewed
-- [ ] Prompt plan ready
+- [x] Spec discussed and approved
+- [x] Prompt plan ready
+- [x] Error classes exist (AppError, NotFoundError, ValidationError, ConflictError, UnauthorizedError)
 
-## Backend — Errors + Auth Middleware
-- [ ] Domain error classes (AppError, NotFound, Validation, Conflict, Forbidden, Unauthorized)
-- [ ] JWT auth middleware
-- [ ] .env.example updated with JWT_SECRET, JWT_EXPIRES_IN
+## Tests (RED phase — write before implementation)
+- [x] Auth service tests written (register + login)
+- [x] Post service tests written (create + delete)
+- [x] Follow service tests written (follow + unfollow)
+- [x] Timeline service tests written (feed + pagination)
+- [x] Auth route integration tests written
+- [x] Post route integration tests written
+- [x] Follow route integration tests written
+- [x] Timeline route integration tests written
+- [x] All edge case tests written
+- [x] **Nitin has reviewed and approved all tests**
+- [x] All tests run and FAIL (confirmed red)
 
-## Backend — User Model + Auth
-- [ ] User schema (name, email, password, bio, timestamps)
-- [ ] authService (signup, login, getMe) with bcrypt + JWT
-- [ ] Auth routes (POST /signup, POST /login, GET /me) — tested
-- [ ] Registered in routes/index.js
+## Models (partial GREEN)
+- [x] User model (name, handle, password, toJSON excludes password)
+- [x] Post model (title, body, author ref, compound index)
+- [x] Follow model (follower, following, unique compound index)
 
-## Backend — User Routes
-- [ ] userService (getById, update)
-- [ ] User routes (GET /:id, PUT /:id) — tested
-- [ ] Registered in routes/index.js
+## Services (GREEN phase)
+- [x] authService.js (register, login)
+- [x] postService.js (createPost, deletePost)
+- [x] followService.js (follow, unfollow)
+- [x] timelineService.js (getTimeline with cursor pagination)
+- [x] Service tests PASS
 
-## Backend — Friends
-- [ ] FriendRequest schema (from, to, status, compound index)
-- [ ] friendService (sendRequest, respond, unfriend, listFriends, listPending, getFriendIds)
-- [ ] Friend routes (POST /request, PUT /request/:id, DELETE /:id, GET /, GET /requests) — tested
-- [ ] Registered in routes/index.js
+## Routes (GREEN phase)
+- [x] users.js route (POST /api/users)
+- [x] auth.js route (POST /api/auth/login)
+- [x] posts.js route (POST, DELETE)
+- [x] follow.js route (POST, DELETE /api/users/:userId/follow)
+- [x] timeline.js route (GET /api/timeline)
+- [x] All routes registered in routes/index.js
+- [x] All integration tests PASS
+- [x] All tests green
 
-## Backend — Posts
-- [ ] Post schema (author, content, timestamps)
-- [ ] postService (create, getById, update, remove with ownership)
-- [ ] Post routes (POST /, GET /:id, PUT /:id, DELETE /:id) — tested
-- [ ] Registered in routes/index.js
-
-## Backend — Feed
-- [ ] feedService (getFeed — friend posts, paginated, newest first)
-- [ ] Feed route (GET /feed) — tested
-- [ ] Registered in routes/index.js
-
-## Backend — Likes
-- [ ] Like schema (user, post, compound unique index)
-- [ ] likeService (like, unlike)
-- [ ] Like routes on posts (POST /:id/like, DELETE /:id/like) — tested
-
-## Backend — Comments
-- [ ] Comment schema (author, post, parent, content)
-- [ ] commentService (add, getComments with replies, remove with cascade)
-- [ ] Nesting validation (reject reply-to-reply)
-- [ ] Comment routes (POST, GET, DELETE) — tested
-- [ ] Registered in routes/index.js
-
-## Frontend — Auth
-- [ ] Login page
-- [ ] Signup page
-- [ ] AuthContext provider (JWT in localStorage)
-- [ ] Redirect to feed after auth
-
-## Frontend — Feed + Posts
-- [ ] Feed page (friend posts)
-- [ ] PostCard component (author, content, likes, comments)
-- [ ] CreatePost component
-- [ ] Like/unlike toggle
-
-## Frontend — Comments + Friends
-- [ ] Post detail page with comments + replies
-- [ ] Comment and reply forms
-- [ ] Friends page (list, pending requests, accept/reject)
-- [ ] Add Friend UI
-
-## Tests
-- [ ] Auth tests (signup, login, duplicate, wrong password, no token)
-- [ ] Friend tests (send, duplicate, self, accept, reject, unfriend, list)
-- [ ] Post tests (CRUD + ownership)
-- [ ] Feed tests (friend-only, pagination)
-- [ ] Like tests (like, duplicate, unlike, unlike non-existent)
-- [ ] Comment tests (create, reply, deep nesting reject, delete cascade)
-- [ ] Full suite green
+## Refactor + SOLID Review
+- [x] S: Every file has single responsibility
+- [x] O: New features don't modify existing working code
+- [x] L: All errors extend AppError consistently
+- [x] I: No unnecessary imports
+- [x] D: Routes -> services -> models (no shortcuts)
+- [x] All tests still pass after refactor
 
 ## Ship
-- [ ] Code reviewed against CLAUDE.md
-- [ ] All tests pass
+- [x] Code reviewed against CLAUDE.md
+- [x] All tests pass
 - [ ] Committed with descriptive message
-- [ ] Mistakes (if any) added to CLAUDE.md

@@ -1,174 +1,170 @@
-# Feature Spec — Social Platform
+# Feature Spec: Social Networking Platform Backend
 
 ## Problem
-Build a social platform where users can register, connect as friends, share text posts, like posts, and comment on posts. The feed shows posts only from accepted friends.
+Build a backend service for a social networking platform where users can register, create/delete posts, follow/unfollow other users, and view a chronological timeline of posts from followed users. The solution must demonstrate scalability thinking (fan-out on read with cursor-based pagination).
 
 ## Requirements
-- [ ] JWT-based authentication (signup, login)
-- [ ] User profiles with basic info
-- [ ] Bidirectional friend system (send request, accept, reject, unfriend)
-- [ ] Text-only posts (CRUD)
-- [ ] Like/unlike posts
-- [ ] Comments on posts (flat) with one-level replies to comments
-- [ ] Friend-only feed endpoint with pagination
+- [x] User registration with validation (name, handle, password)
+- [x] JWT authentication for all protected endpoints
+- [x] Create and delete posts (only by post author)
+- [x] Follow/unfollow users (no self-follow, no duplicate follows)
+- [x] Timeline: pull model (fan-out on read), cursor-based pagination
+- [x] All responses follow `{ success: true/false, data/error: ... }` format
 
 ## Data Model
 
+### User
 ```
 User {
-  name:       String (required)
-  email:      String (required, unique)
-  password:   String (required, hashed via bcrypt)
-  bio:        String (optional)
+  _id: ObjectId (auto — mapped to userId in responses)
+  name: String (required, min 3 chars)
+  handle: String (required, unique, trimmed, lowercase)
+  password: String (required, bcrypt hashed, excluded from toJSON)
   timestamps: true
 }
-
-FriendRequest {
-  from:       ObjectId -> User (required)
-  to:         ObjectId -> User (required)
-  status:     String enum ["pending", "accepted", "rejected"] (required, default: "pending")
-  timestamps: true
-  unique:     compound index on [from, to]
-}
-
-Post {
-  author:     ObjectId -> User (required)
-  content:    String (required, maxlength: 2000)
-  timestamps: true
-}
-
-Like {
-  user:       ObjectId -> User (required)
-  post:       ObjectId -> Post (required)
-  timestamps: true
-  unique:     compound index on [user, post]
-}
-
-Comment {
-  author:     ObjectId -> User (required)
-  post:       ObjectId -> Post (required)
-  parent:     ObjectId -> Comment (optional, null = top-level comment)
-  content:    String (required, maxlength: 1000)
-  timestamps: true
-}
+Indexes: { handle: 1 } (unique)
 ```
 
-### Relationship Rules
-- FriendRequest: A user cannot send a request to themselves. Only one active request between any two users (regardless of direction).
-- Like: A user can like a post only once (enforced by compound unique index).
-- Comment: `parent` must be a top-level comment (parent.parent === null) — no deeper nesting.
+### Post
+```
+Post {
+  _id: ObjectId (auto — mapped to postId in responses)
+  title: String (required, max 20 chars)
+  body: String (required, max 300 chars)
+  author: ObjectId -> User (required, ref: "User")
+  timestamps: true
+}
+Indexes: { author: 1, createdAt: -1 }  (timeline queries per user)
+```
+
+### Follow
+```
+Follow {
+  _id: ObjectId (auto)
+  follower: ObjectId -> User (required, ref: "User")
+  following: ObjectId -> User (required, ref: "User")
+  timestamps: true
+}
+Indexes:
+  { follower: 1, following: 1 } (unique compound — prevents duplicates)
+  { following: 1 }              (lookup "who follows user X")
+```
 
 ## API Endpoints
 
-### Auth
-| Method | Path              | Description             | Auth |
-|--------|-------------------|-------------------------|------|
-| POST   | /api/auth/signup  | Register new user       | No   |
-| POST   | /api/auth/login   | Login, returns JWT      | No   |
-| GET    | /api/auth/me      | Get current user profile| Yes  |
+### Auth (no JWT required)
 
-### Users
-| Method | Path              | Description             | Auth |
-|--------|-------------------|-------------------------|------|
-| GET    | /api/users/:id    | Get user public profile | Yes  |
-| PUT    | /api/users/:id    | Update own profile      | Yes  |
+| Method | Path | Description | Request | Response |
+|--------|------|-------------|---------|----------|
+| POST | `/api/users` | Register a new user | `{ name, handle, password }` | `{ success: true, data: { userId, token } }` |
+| POST | `/api/auth/login` | Login | `{ handle, password }` | `{ success: true, data: { userId, token } }` |
 
-### Friends
-| Method | Path                          | Description                    | Auth |
-|--------|-------------------------------|--------------------------------|------|
-| POST   | /api/friends/request          | Send friend request            | Yes  |
-| PUT    | /api/friends/request/:id      | Accept or reject request       | Yes  |
-| DELETE | /api/friends/:id              | Unfriend a user                | Yes  |
-| GET    | /api/friends                  | List current user's friends    | Yes  |
-| GET    | /api/friends/requests         | List pending requests (incoming)| Yes |
+### Posts (JWT required)
 
-### Posts
-| Method | Path              | Description              | Auth |
-|--------|-------------------|--------------------------|------|
-| POST   | /api/posts        | Create a post            | Yes  |
-| GET    | /api/posts/:id    | Get single post (with like count, comments) | Yes |
-| PUT    | /api/posts/:id    | Update own post          | Yes  |
-| DELETE | /api/posts/:id    | Delete own post          | Yes  |
+| Method | Path | Description | Request | Response |
+|--------|------|-------------|---------|----------|
+| POST | `/api/posts` | Create a post | `{ title, body }` — userId from JWT | `{ success: true, data: { postId } }` |
+| DELETE | `/api/posts/:postId` | Delete own post | — userId from JWT | `{ success: true, data: null }` |
 
-### Feed
-| Method | Path              | Description                        | Auth |
-|--------|-------------------|------------------------------------|------|
-| GET    | /api/feed         | Posts from friends, paginated, newest first | Yes |
+### Follow (JWT required)
 
-### Likes
-| Method | Path                    | Description        | Auth |
-|--------|-------------------------|--------------------|------|
-| POST   | /api/posts/:id/like     | Like a post        | Yes  |
-| DELETE | /api/posts/:id/like     | Unlike a post      | Yes  |
+| Method | Path | Description | Request | Response |
+|--------|------|-------------|---------|----------|
+| POST | `/api/users/:userId/follow` | Follow a user | — followerId from JWT | `{ success: true, data: null }` |
+| DELETE | `/api/users/:userId/follow` | Unfollow a user | — followerId from JWT | `{ success: true, data: null }` |
 
-### Comments
-| Method | Path                          | Description              | Auth |
-|--------|-------------------------------|--------------------------|------|
-| POST   | /api/posts/:postId/comments   | Add comment or reply     | Yes  |
-| GET    | /api/posts/:postId/comments   | List comments with replies| Yes |
-| DELETE | /api/comments/:id             | Delete own comment       | Yes  |
+### Timeline (JWT required)
 
-## Request/Response Shapes
+| Method | Path | Description | Query Params | Response |
+|--------|------|-------------|--------------|----------|
+| GET | `/api/timeline` | Posts from followed users, newest first | `cursor` (optional, postId), `limit` (default 10, max 50) | `{ success: true, data: { posts: [...], nextCursor } }` |
 
-### Auth
-```
-POST /api/auth/signup
-Body: { name, email, password }
-Res:  { success: true, data: { token, user: { _id, name, email, bio } } }
-
-POST /api/auth/login
-Body: { email, password }
-Res:  { success: true, data: { token, user: { _id, name, email, bio } } }
+#### Timeline response shape:
+```json
+{
+  "success": true,
+  "data": {
+    "posts": [
+      {
+        "postId": "ObjectId",
+        "title": "string",
+        "body": "string",
+        "authorId": "ObjectId",
+        "authorHandle": "string",
+        "createdAt": "ISO datetime"
+      }
+    ],
+    "nextCursor": "ObjectId or null"
+  }
+}
 ```
 
-### Friends
-```
-POST /api/friends/request
-Body: { to: userId }
-Res:  { success: true, data: friendRequest }
+### Timeline — Pull Model Implementation
 
-PUT /api/friends/request/:id
-Body: { status: "accepted" | "rejected" }
-Res:  { success: true, data: friendRequest }
-```
+1. Fetch the list of user IDs that the requesting user follows from the `Follow` collection.
+2. Query `Post` where `author` is `$in` that list, sorted by `createdAt: -1`.
+3. For cursor-based pagination: if `cursor` is provided, find the cursor post's `createdAt`, then query posts with `createdAt < cursorPost.createdAt` (or same `createdAt` and `_id < cursor`).
+4. Limit to `limit + 1` to detect if there's a next page. If `limit + 1` results come back, pop the last one and set `nextCursor` to the last returned post's `_id`.
+5. Populate `authorHandle` from the User collection via `populate` or `$lookup`.
 
-### Feed
-```
-GET /api/feed?page=1&limit=20
-Res: { success: true, data: { posts: [...], total, page, limit } }
-Each post includes: author (populated name), content, likeCount, commentCount, createdAt
-```
-
-### Comments
-```
-POST /api/posts/:postId/comments
-Body: { content, parent?: commentId }
-Res:  { success: true, data: comment }
-
-GET /api/posts/:postId/comments
-Res:  { success: true, data: [{ ...comment, replies: [...] }] }
-Top-level comments with nested replies array.
-```
+#### Scaling Notes (HLD)
+- **Current approach (fan-out on read):** Simple, write-cheap. Works well up to ~1000 followings per user with proper compound indexes.
+- **Indexes are critical:** `Post { author: 1, createdAt: -1 }` enables efficient per-author scans. `Follow { follower: 1 }` enables fast following-list lookups.
+- **Next scaling step:** If read latency grows, introduce a Redis-backed timeline cache (fan-out on write for normal users, fan-out on read for celebrity users with 100k+ followers — hybrid model).
+- **Beyond MongoDB:** At true social-network scale, the follow graph moves to a graph database or adjacency-list service, and the timeline becomes a dedicated feed service with its own storage.
 
 ## Edge Cases
-- Signup with duplicate email → 409 Conflict
-- Login with wrong password → 401 Unauthorized
-- Friend request to self → 400 Validation Error
-- Duplicate friend request (either direction) → 409 Conflict
-- Accept/reject request not addressed to current user → 403 Forbidden
-- Update/delete post not owned by current user → 403 Forbidden
-- Like a post already liked → 409 Conflict
-- Unlike a post not liked → 404 Not Found
-- Reply to a reply (nesting > 1 level) → 400 Validation Error
-- Delete comment that has replies → cascade delete replies
-- Invalid/expired JWT → 401 Unauthorized
-- Malformed ObjectId in params → 400 Validation Error
+
+| Scenario | Expected Behavior |
+|----------|-------------------|
+| Register with duplicate handle | 409 Conflict |
+| Register with name < 3 chars | 400 Validation Error |
+| Create post without auth | 401 Unauthorized |
+| Delete post without auth | 401 Unauthorized |
+| Post title > 20 chars | 400 Validation Error |
+| Post body > 300 chars | 400 Validation Error |
+| Follow without auth | 401 Unauthorized |
+| Unfollow without auth | 401 Unauthorized |
+| Follow yourself | 400 Validation Error |
+| Follow same user twice | 409 Conflict |
+| Unfollow user not followed | 404 Not Found |
+| Delete someone else's post | 401 Unauthorized |
+| Delete non-existent post | 404 Not Found |
+| Timeline without auth | 401 Unauthorized |
+| Timeline with no follows | 200 with empty posts array |
+| Timeline cursor with invalid ID | 400 Validation Error |
+| Any protected endpoint with expired token | 401 Unauthorized |
 
 ## Success Criteria
-- All endpoints return `{ success: true/false, data/error }` format
-- JWT protects all endpoints except signup/login
-- Friend-only feed returns correct posts with pagination
-- Comments support exactly one level of nesting
-- Like uniqueness enforced at DB level
-- All happy paths and edge cases covered by tests
-- No hardcoded values — all config from .env
+1. All tests pass (`docker-compose exec backend npm test`)
+2. Every endpoint returns the correct status code and response shape
+3. JWT auth enforced on all protected endpoints
+4. Cursor-based pagination works correctly on timeline
+5. No business logic in route handlers — all in services
+6. Proper compound indexes on Follow and Post for scalability
+7. Passwords never appear in any response or log
+
+## SOLID Mapping
+
+### Single Responsibility — Service Files
+- `authService.js` — registration, login, password hashing, token generation
+- `postService.js` — create post, delete post
+- `followService.js` — follow, unfollow
+- `timelineService.js` — fetch timeline with pagination
+
+### Open/Closed — Middleware Composition
+- `auth.js` — JWT verification (already exists)
+- `validate.js` — required field validation (already exists, will be extended with field-specific validators)
+- `errorHandler.js` — catches all AppError subclasses (already exists)
+
+### Liskov — Error Types
+- All error classes already exist: `AppError`, `NotFoundError`, `ValidationError`, `ConflictError`, `UnauthorizedError`
+- All extend `AppError`, all caught uniformly by `errorHandler.js`
+
+### Interface Segregation
+- Routes import only the service functions they need
+- Services receive plain data (not req/res objects)
+
+### Dependency Inversion
+- Routes depend on services (abstraction), never on Mongoose models directly
+- Services import models internally

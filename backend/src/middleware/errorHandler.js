@@ -1,4 +1,4 @@
-const { AppError } = require("../errors");
+const { AppError, NotFoundError } = require("../errors");
 
 const errorHandler = (err, req, res, next) => {
   const statusCode = err instanceof AppError ? err.statusCode : 500;
@@ -12,9 +12,7 @@ const errorHandler = (err, req, res, next) => {
 };
 
 const notFound = (req, res, next) => {
-  const error = new Error(`Not Found - ${req.originalUrl}`);
-  error.statusCode = 404;
-  next(error);
+  next(new NotFoundError(`Not Found - ${req.originalUrl}`));
 };
 
 module.exports = { errorHandler, notFound };

@@ -1,119 +1,166 @@
-# Prompt Plan — Social Platform
+# Prompt Plan: Social Networking Platform Backend
 
-> Sequenced prompts to feed Claude. Execute these in order, one at a time.
-> Each prompt builds on the previous — don't skip steps.
+> Sequenced prompts to feed Claude. Execute in order. Tests come BEFORE implementation.
 
-## Prompt 1 — Domain Errors + Auth Middleware
+## Feature: Social Networking Platform (Users, Posts, Follow, Timeline)
+
+### Phase 1 — Service tests (RED)
 ```
 Read the spec in .claude/workflows/current-spec.md.
-Create backend/src/errors/index.js with AppError, NotFoundError, ValidationError, ConflictError, ForbiddenError, UnauthorizedError.
-Create backend/src/middleware/auth.js — JWT verification middleware that extracts user from token and attaches to req.user.
-Add JWT_SECRET and JWT_EXPIRES_IN to .env.example.
-Do NOT create models or routes yet.
+Error classes already exist (AppError, NotFoundError, ValidationError, ConflictError, UnauthorizedError).
+
+Write ALL service test files:
+- backend/src/__tests__/authService.test.js
+  - register: happy path returns userId + token
+  - register: duplicate handle → ConflictError
+  - register: name < 3 chars → ValidationError
+  - login: happy path returns userId + token
+  - login: wrong password → UnauthorizedError
+  - login: non-existent handle → NotFoundError
+
+- backend/src/__tests__/postService.test.js
+  - create: happy path returns postId
+  - create: title > 20 chars → ValidationError
+  - create: body > 300 chars → ValidationError
+  - create: invalid userId → NotFoundError
+  - delete: happy path
+  - delete: non-existent post → NotFoundError
+  - delete: not the author → UnauthorizedError
+
+- backend/src/__tests__/followService.test.js
+  - follow: happy path
+  - follow: self-follow → ValidationError
+  - follow: duplicate follow → ConflictError
+  - follow: target user doesn't exist → NotFoundError
+  - unfollow: happy path
+  - unfollow: not following → NotFoundError
+
+- backend/src/__tests__/timelineService.test.js
+  - happy path: returns posts from followed users, newest first
+  - empty follows: returns empty array
+  - cursor pagination: returns correct page, nextCursor
+  - cursor pagination: last page has nextCursor = null
+  - includes authorHandle in each post
+  - does not include posts from unfollowed users
+
+Do NOT write any services, models, or routes yet.
+Run npm test — all new tests should FAIL.
 ```
 
-## Prompt 2 — User Model + Auth Routes
+### Phase 2 — Route/integration tests (RED)
 ```
-Create backend/src/models/User.js (name, email, password, bio, timestamps).
-Create backend/src/services/authService.js (signup, login, getMe). Hash passwords with bcrypt. Generate JWT on signup/login.
-Create backend/src/routes/auth.js (POST /signup, POST /login, GET /me).
-Register in routes/index.js at /auth.
-Test all three with curl.
+Write integration tests for all API endpoints:
+- backend/src/__tests__/auth.routes.test.js
+  - POST /api/users: happy path 201
+  - POST /api/users: duplicate handle 409
+  - POST /api/users: name too short (< 3 chars) 400
+  - POST /api/users: missing fields 400
+  - POST /api/auth/login: happy path 200
+  - POST /api/auth/login: wrong password 401
+  - POST /api/auth/login: non-existent handle 404
+
+- backend/src/__tests__/posts.routes.test.js
+  - POST /api/posts: happy path 201
+  - POST /api/posts: no auth 401
+  - POST /api/posts: expired/invalid token 401
+  - POST /api/posts: title too long 400
+  - DELETE /api/posts/:postId: happy path 200
+  - DELETE /api/posts/:postId: no auth 401
+  - DELETE /api/posts/:postId: not author 401
+  - DELETE /api/posts/:postId: not found 404
+
+- backend/src/__tests__/follow.routes.test.js
+  - POST /api/users/:userId/follow: happy path 200
+  - POST /api/users/:userId/follow: no auth 401
+  - POST /api/users/:userId/follow: self-follow 400
+  - POST /api/users/:userId/follow: duplicate 409
+  - DELETE /api/users/:userId/follow: happy path 200
+  - DELETE /api/users/:userId/follow: no auth 401
+  - DELETE /api/users/:userId/follow: not following 404
+
+- backend/src/__tests__/timeline.routes.test.js
+  - GET /api/timeline: happy path 200, correct shape
+  - GET /api/timeline: no auth 401
+  - GET /api/timeline: empty follows returns empty array
+  - GET /api/timeline: cursor pagination works
+  - GET /api/timeline: invalid cursor 400
+  - GET /api/timeline: respects limit param
+
+Test all response shapes: { success: true/false, data/error: ... }
+Do NOT write any routes or services yet.
+Run npm test — all new tests should FAIL.
+Show tests for user review.
 ```
 
-## Prompt 3 — User Routes
+> **GATE: Nitin reviews and approves all tests before proceeding.**
+
+### Phase 3 — Models (GREEN — partial)
 ```
-Create backend/src/services/userService.js (getById, update).
-Create backend/src/routes/users.js (GET /:id, PUT /:id — only own profile).
-Register in routes/index.js at /users.
-Test with curl.
+Create Mongoose models:
+- backend/src/models/User.js
+  - Fields: name, handle, dob, password (per spec)
+  - toJSON override: exclude password
+  - Index: { handle: 1 } unique
+
+- backend/src/models/Post.js
+  - Fields: title, body, author (ref: User)
+  - Index: { author: 1, createdAt: -1 }
+
+- backend/src/models/Follow.js
+  - Fields: follower (ref: User), following (ref: User)
+  - Compound unique index: { follower: 1, following: 1 }
+  - Index: { following: 1 }
+
+Only schemas — no business logic in models.
+timestamps: true on all.
 ```
 
-## Prompt 4 — FriendRequest Model + Routes
+### Phase 4 — Services (GREEN)
 ```
-Create backend/src/models/FriendRequest.js (from, to, status, compound unique index, timestamps).
-Create backend/src/services/friendService.js (sendRequest, respondToRequest, unfriend, listFriends, listPendingRequests, getFriendIds helper).
-Create backend/src/routes/friends.js (POST /request, PUT /request/:id, DELETE /:id, GET /, GET /requests).
-Register in routes/index.js at /friends.
-Test all with curl using two different JWT tokens.
+Create service files:
+- backend/src/services/authService.js
+  - register(name, handle, password) → { userId, token }
+  - login(handle, password) → { userId, token }
+
+- backend/src/services/postService.js
+  - createPost(userId, title, body) → { postId }
+  - deletePost(userId, postId) → void
+
+- backend/src/services/followService.js
+  - follow(followerId, followingId) → void
+  - unfollow(followerId, followingId) → void
+
+- backend/src/services/timelineService.js
+  - getTimeline(userId, cursor, limit) → { posts, nextCursor }
+
+Each function: receives plain data, returns data or throws typed errors.
+No req/res references. Services import models internally.
+Run npm test — service tests should now PASS.
 ```
 
-## Prompt 5 — Post Model + Routes
+### Phase 5 — Routes (GREEN)
 ```
-Create backend/src/models/Post.js (author, content, timestamps).
-Create backend/src/services/postService.js (create, getById, update, remove — ownership checks).
-Create backend/src/routes/posts.js (POST /, GET /:id, PUT /:id, DELETE /:id).
-Register in routes/index.js at /posts.
-Test with curl.
+Create route files:
+- backend/src/routes/users.js — POST /api/users (register)
+- backend/src/routes/auth.js — POST /api/auth/login
+- backend/src/routes/posts.js — POST /api/posts, DELETE /api/posts/:postId
+- backend/src/routes/follow.js — POST/DELETE /api/users/:userId/follow
+- backend/src/routes/timeline.js — GET /api/timeline
+
+Routes are THIN: parse req → call service → send res.json.
+Apply auth middleware to protected routes.
+Apply validation middleware where needed.
+Register all in routes/index.js.
+Run npm test — ALL tests should PASS.
 ```
 
-## Prompt 6 — Feed
+### Phase 6 — Refactor + SOLID Review
 ```
-Create backend/src/services/feedService.js (getFeed — query posts where author is in friend list, paginated, newest first, populate author name).
-Create backend/src/routes/feed.js (GET / with ?page&limit query params).
-Register in routes/index.js at /feed.
-Test with curl — create two users, make them friends, create posts, verify feed.
-```
-
-## Prompt 7 — Like Model + Routes
-```
-Create backend/src/models/Like.js (user, post, compound unique index, timestamps).
-Create backend/src/services/likeService.js (like, unlike — with conflict/not-found handling).
-Add like/unlike routes to backend/src/routes/posts.js (POST /:id/like, DELETE /:id/like).
-Test with curl — like, duplicate like (409), unlike, unlike again (404).
-```
-
-## Prompt 8 — Comment Model + Routes
-```
-Create backend/src/models/Comment.js (author, post, parent, content, timestamps).
-Create backend/src/services/commentService.js (addComment, getComments — grouped with replies, removeComment — cascade delete replies).
-Validate: parent must be null or a top-level comment (parent.parent === null). Reject deeper nesting.
-Create backend/src/routes/comments.js (POST /posts/:postId/comments, GET /posts/:postId/comments, DELETE /comments/:id).
-Register in routes/index.js.
-Test with curl.
-```
-
-## Prompt 9 — Frontend: Auth Pages
-```
-Create frontend/app/auth/login/page.js and frontend/app/auth/signup/page.js.
-"use client" forms that call the API and store JWT in localStorage.
-Create a shared AuthContext provider for managing logged-in state.
-Redirect to feed after login/signup.
-```
-
-## Prompt 10 — Frontend: Feed + Posts
-```
-Create frontend/app/feed/page.js — shows posts from friends.
-Create a PostCard component (shows author, content, like count, comment count, like button).
-Create a CreatePost component ("use client" form at top of feed).
-Wire up like/unlike toggle.
-```
-
-## Prompt 11 — Frontend: Comments + Friends
-```
-Add comment section to post detail page frontend/app/posts/[id]/page.js.
-Show comments with replies. Add comment form. Add reply form.
-Create frontend/app/friends/page.js — list friends, pending requests, accept/reject UI.
-Create a user search or profile page with "Add Friend" button.
-```
-
-## Prompt 12 — Tests
-```
-Write Jest + Supertest tests for ALL endpoints:
-- Auth: signup, login, duplicate email, wrong password, protected route without token
-- Friends: send request, duplicate, self-request, accept, reject, unfriend, list
-- Posts: CRUD + ownership checks
-- Feed: returns only friend posts, pagination
-- Likes: like, duplicate, unlike, unlike non-existent
-- Comments: create, reply, nested reply rejection, delete cascade
-Run npm test and fix all failures.
-```
-
-## Prompt 13 — Polish
-```
-Review all code against CLAUDE.md conventions.
-Ensure all responses use { success, data/error } format.
-Ensure all catch blocks call next(err).
-Ensure no hardcoded values.
-Run full test suite. Confirm everything passes.
+Review all code against SOLID principles in CLAUDE.md:
+- S: Is each file doing one thing?
+- O: Can we extend without modifying existing files?
+- L: Do all errors behave consistently?
+- I: Are imports minimal?
+- D: Do routes depend on services, not models?
+Fix any violations. Run npm test — must still pass (GREEN).
 ```
